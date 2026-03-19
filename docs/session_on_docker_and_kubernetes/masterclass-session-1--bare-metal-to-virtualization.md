@@ -1,29 +1,3 @@
----
-marp: true
-theme: default
-paginate: true
-backgroundColor: #1a1a2e
-color: #e0e0e0
-style: |
-  section {
-    font-family: 'Segoe UI', Arial, sans-serif;
-  }
-  h1 { color: #00d4ff; }
-  h2 { color: #7b68ee; }
-  h3 { color: #ff6b6b; }
-  strong { color: #ffd93d; }
-  code { background: #16213e; color: #00d4ff; padding: 2px 6px; border-radius: 4px; }
-  table { font-size: 0.8em; }
-  th { background: #16213e; color: #00d4ff; }
-  td { background: #0f3460; }
-  blockquote { border-left: 4px solid #7b68ee; background: #16213e; padding: 10px 20px; }
-  a { color: #ffd93d; }
-  .columns { display: flex; gap: 2em; }
-  .col { flex: 1; }
----
-
-<!-- _class: lead -->
-
 # 🖥️ Session 1
 ## From Bare Metal to Virtualization
 ### Master Class — Infrastructure Foundations
@@ -342,11 +316,11 @@ Development, testing, learning, malware sandboxing, running legacy apps
 # KVM — A Special Case (Type 1.5?)
 
 ```
-┌──────────────────────────────────────────────┐
+┌───────────────────────────────────────────────┐
 │              User Space (Linux)               │
-│  ┌──────────┐ ┌──────────┐ ┌──────────────┐ │
-│  │ QEMU/VM1 │ │ QEMU/VM2 │ │ Normal Apps  │ │
-│  └────┬─────┘ └────┬─────┘ └──────────────┘ │
+│  ┌──────────┐ ┌──────────┐ ┌──────────────┐   │
+│  │ QEMU/VM1 │ │ QEMU/VM2 │ │ Normal Apps  │   │
+│  └────┬─────┘ └────┬─────┘ └──────────────┘   │
 │       │             │                         │
 ├───────┴─────────────┴─────────────────────────┤
 │          Linux Kernel + KVM module            │
@@ -356,7 +330,7 @@ Development, testing, learning, malware sandboxing, running legacy apps
 │  │  virtio: paravirtualized I/O drivers    │  │
 │  └─────────────────────────────────────────┘  │
 ├───────────────────────────────────────────────┤
-│     Hardware (VT-x / AMD-V, VT-d, SR-IOV)   │
+│     Hardware (VT-x / AMD-V, VT-d, SR-IOV)     │
 └───────────────────────────────────────────────┘
 ```
 
@@ -521,23 +495,23 @@ x86 had **17 sensitive but non-privileged instructions** (e.g., `SGDT`, `SIDT`, 
 # Hardware-Assisted Virtualization (VT-x)
 
 ```
-┌─────────────────────────────────────────┐
-│              VMX Operation              │
-│                                         │
-│  ┌─────────┐         ┌───────────────┐ │
-│  │VMX root │◄──VMEXIT──│VMX non-root│ │
-│  │(host/   │          │  (guest VM)  │ │
-│  │hyperv.) │──VMENTER──►│             │ │
-│  └─────────┘         └───────────────┘ │
-│                                         │
-│  VMCS (Virtual Machine Control Struct.) │
-│  ┌─────────────────────────────────────┐│
-│  │ Guest state area (regs, CR, EFER)  ││
-│  │ Host state area (return state)     ││
-│  │ VM-execution controls (what traps) ││
-│  │ Exit reason + qualification        ││
-│  └─────────────────────────────────────┘│
-└─────────────────────────────────────────┘
+┌────────────────────────────────────────────┐
+│              VMX Operation                 │
+│                                            │
+│  ┌──────────┐            ┌───────────────┐ │
+│  │ VMX root │◄──VMEXIT──►│ VMX non-root  │ │
+│  │ (host/   │            │  (guest VM)   │ │
+│  │ hyperv.) │◄──VMENTER─►│               │ │
+│  └──────────┘            └───────────────┘ │
+│                                            │
+│  VMCS (Virtual Machine Control Struct.)    │
+│  ┌─────────────────────────────────────┐   │
+│  │ Guest state area (regs, CR, EFER)   │   │
+│  │ Host state area (return state)      │   │
+│  │ VM-execution controls (what traps)  │   │
+│  │ Exit reason + qualification         │   │
+│  └─────────────────────────────────────┘   │
+└────────────────────────────────────────────┘
 ```
 
 - **VMLAUNCH/VMRESUME** → enter guest (VMX non-root)
@@ -578,21 +552,21 @@ Hypervisors are the **foundation** of modern cloud services — AWS (Xen → Nit
 ```
       VIRTUALIZATION                    CONTAINERIZATION
 
-┌──────┐ ┌──────┐ ┌──────┐     ┌──────┐ ┌──────┐ ┌──────┐
-│App A │ │App B │ │App C │     │App A │ │App B │ │App C │
-├──────┤ ├──────┤ ├──────┤     ├──────┤ ├──────┤ ├──────┤
-│Bins/ │ │Bins/ │ │Bins/ │     │Bins/ │ │Bins/ │ │Bins/ │
-│Libs  │ │Libs  │ │Libs  │     │Libs  │ │Libs  │ │Libs  │
-├──────┤ ├──────┤ ├──────┤     └──┬───┘ └──┬───┘ └──┬───┘
-│GuestOS││GuestOS││GuestOS│        │        │        │
-└──┬───┘ └──┬───┘ └──┬───┘   ┌────┴────────┴────────┴────┐
-   │        │        │       │     Container Runtime      │
-┌──┴────────┴────────┴────┐  │   (Docker/containerd/CRI-O)│
-│       Hypervisor        │  ├────────────────────────────┤
-├─────────────────────────┤  │    Host OS Kernel (shared) │
-│   Hardware              │  ├────────────────────────────┤
-└─────────────────────────┘  │    Hardware                │
-                             └────────────────────────────┘
+┌───────┐ ┌───────┐ ┌───────┐     ┌───────┐ ┌───────┐ ┌───────┐
+│ App A │ │ App B │ │ App C │     │ App A │ │ App B │ │ App C │
+├───────┤ ├───────┤ ├───────┤     ├───────┤ ├───────┤ ├───────┤
+│ Bins/ │ │ Bins/ │ │ Bins/ │     │ Bins/ │ │ Bins/ │ │ Bins/ │
+│ Libs  │ │ Libs  │ │ Libs  │     │ Libs  │ │ Libs  │ │ Libs  │
+├───────┤ ├───────┤ ├───────┤     └───┬───┘ └───┬───┘ └───┬───┘
+│GuestOS│ │GuestOS│ │GuestOS│         │         │         │
+└───┬───┘ └───┬───┘ └───┬───┘   ┌─────┴─────────┴─────────┴────┐
+    │         │         │       │      Container Runtime       │
+┌───┴─────────┴─────────┴────┐  │   (Docker/containerd/CRI-O)  │
+│       Hypervisor           │  ├──────────────────────────────┤
+├────────────────────────────┤  │     Host OS Kernel (shared)  │
+│          Hardware          │  ├──────────────────────────────┤
+└────────────────────────────┘  │     Hardware                 │
+                                └──────────────────────────── ─┘
 ```
 
 ---
@@ -637,19 +611,19 @@ Hypervisors are the **foundation** of modern cloud services — AWS (Xen → Nit
 # The Full Stack in Production
 
 ```
-┌────────────────────────────────────────────────────┐
-│              YOUR APPLICATIONS                     │
-│   ┌──────────┐ ┌──────────┐ ┌──────────┐          │
-│   │Container │ │Container │ │Container │  ...      │
-│   └────┬─────┘ └────┬─────┘ └────┬─────┘          │
-│        └──────┬──────┘            │                │
-│        ┌──────┴───────────────────┴──────────┐     │
-│        │   Kubernetes / Container Orchestrator │    │
-│        ├─────────────────────────────────────┤     │
-│        │   Container Runtime (containerd/CRI-O)│   │
-│        ├─────────────────────────────────────┤     │
-│        │   Linux Kernel (namespaces, cgroups) │    │
-│        └─────────────────────────────────────┘     │
+┌─────────────────────────────────────────────────────┐
+│              YOUR APPLICATIONS                      │
+│   ┌──────────┐ ┌──────────┐ ┌──────────┐            │
+│   │Container │ │Container │ │Container │  ...       │
+│   └────┬─────┘ └─────┬────┘ └─────┬────┘            │
+│        └──────┬──────┘            │                 │
+│        ┌──────┴───────────────────┴──────────┐      │
+│        │ Kubernetes / Container Orchestrator │      │
+│        ├─────────────────────────────────────┤      │
+│        │ Container Runtime (containerd/CRI-O)│      │
+│        ├─────────────────────────────────────┤      │
+│        │ Linux Kernel (namespaces, cgroups)  │      │
+│        └─────────────────────────────────────┘      │
 │                    ┌──────────┐                     │
 │                    │    VM    │ ← VM per K8s node   │
 │                    └────┬─────┘                     │
@@ -659,7 +633,7 @@ Hypervisors are the **foundation** of modern cloud services — AWS (Xen → Nit
 │               ├────────────────────┤                │
 │               │ Physical Hardware  │                │
 │               └────────────────────┘                │
-└────────────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────┘
 ```
 
 **Next session:** We'll deep-dive into what's inside that container & Kubernetes layer →
