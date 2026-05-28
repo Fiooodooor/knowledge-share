@@ -1,0 +1,543 @@
+
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NIC Driver Porting Swarm • LangGraph GUI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+        
+        :root {
+            --primary: 139 92 246;
+        }
+        
+        body {
+            font-family: 'Inter', system_ui, sans-serif;
+        }
+        
+        .node {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .node.active {
+            filter: drop-shadow(0 0 15px rgb(167 139 250));
+            transform: scale(1.05);
+        }
+        
+        .edge {
+            stroke-dasharray: 8 4;
+            animation: flow 1.5s linear infinite;
+        }
+        
+        @keyframes flow {
+            to {
+                stroke-dashoffset: -24;
+            }
+        }
+        
+        .trace-item {
+            opacity: 0;
+            animation: fadeInUp 0.4s forwards;
+        }
+        
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .graph-container {
+            background: 
+                linear-gradient(#1f2937 1px, transparent 1px),
+                linear-gradient(90deg, #1f2937 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+    </style>
+</head>
+<body class="bg-zinc-950 text-zinc-200">
+    <div class="flex h-screen flex-col">
+        <!-- HEADER -->
+        <header class="border-b border-zinc-800 bg-zinc-900 px-6 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-x-4">
+                <div class="flex items-center gap-x-3">
+                    <div class="w-8 h-8 bg-violet-600 rounded-xl flex items-center justify-center text-white font-bold text-xl">N</div>
+                    <div>
+                        <span class="font-semibold text-xl tracking-tight">NIC Swarm</span>
+                        <span class="text-zinc-500 text-sm block -mt-1">Driver Porting Orchestrator</span>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-x-2 ml-8">
+                    <select id="agent-select" 
+                            class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-violet-500">
+                        <option value="swarm">Main Swarm Coordinator</option>
+                        <option value="linux">Linux Team Agent</option>
+                        <option value="windows">Windows Team Agent</option>
+                        <option value="freebsd">FreeBSD Team Agent</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-x-4">
+                <button onclick="toggleInterrupts()" 
+                        class="flex items-center gap-x-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-medium transition-colors">
+                    <i class="fa-solid fa-pause"></i>
+                    <span>Interrupts</span>
+                </button>
+                
+                <button onclick="newThread()" 
+                        class="flex items-center gap-x-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 rounded-xl text-sm font-medium transition-colors">
+                    <i class="fa-solid fa-plus"></i>
+                    <span>New Thread</span>
+                </button>
+                
+                <div class="flex items-center gap-x-2 text-xs bg-zinc-800 px-3 py-1 rounded-full">
+                    <div class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                    <span class="text-emerald-400 font-medium">LIVE</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="flex flex-1 overflow-hidden">
+            <!-- LEFT: INTERACTIVE GRAPH -->
+            <div class="w-5/12 border-r border-zinc-800 flex flex-col">
+                <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-900">
+                    <div class="flex items-center gap-x-3">
+                        <span class="font-semibold text-lg">Workflow Graph</span>
+                        <span id="thread-id" class="text-xs font-mono text-zinc-500">thread_8f3k9x2m</span>
+                    </div>
+                    <div class="flex gap-x-2">
+                        <button onclick="resetGraph()" 
+                                class="px-3 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-lg flex items-center gap-x-1">
+                            <i class="fa-solid fa-rotate"></i>
+                            Reset
+                        </button>
+                        <button onclick="simulateRun()" 
+                                id="run-btn"
+                                class="px-5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium flex items-center gap-x-2">
+                            <i class="fa-solid fa-play"></i>
+                            <span>Run Workflow</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- GRAPH -->
+                <div id="graph-container" class="flex-1 graph-container relative overflow-hidden p-8">
+                    <svg id="workflow-svg" width="100%" height="100%" class="absolute inset-0"></svg>
+                </div>
+                
+                <!-- LEGEND -->
+                <div class="px-6 py-3 border-t border-zinc-800 bg-zinc-900 text-xs flex items-center gap-x-6 text-zinc-400">
+                    <div class="flex items-center gap-x-2">
+                        <div class="w-3 h-3 bg-violet-500 rounded"></div>
+                        <span>Agent</span>
+                    </div>
+                    <div class="flex items-center gap-x-2">
+                        <div class="w-3 h-3 bg-sky-500 rounded"></div>
+                        <span>Action/Tool</span>
+                    </div>
+                    <div class="flex items-center gap-x-2">
+                        <div class="w-3 h-3 bg-amber-500 rounded"></div>
+                        <span>Checkpoint</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT: LIVE TRACE -->
+            <div class="flex-1 flex flex-col">
+                <div class="px-6 py-4 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between">
+                    <div class="flex items-center gap-x-3">
+                        <span class="font-medium">Execution Trace</span>
+                        <span id="trace-status" 
+                              class="px-3 py-0.5 text-xs rounded-full bg-amber-500/10 text-amber-400 font-medium">
+                            IDLE
+                        </span>
+                    </div>
+                    <div class="flex items-center gap-x-4 text-sm">
+                        <button onclick="clearTrace()" 
+                                class="text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-x-1 text-xs">
+                            <i class="fa-solid fa-trash"></i>
+                            CLEAR
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- TRACE CONTENT -->
+                <div id="trace-panel" class="flex-1 overflow-auto p-6 space-y-6 bg-zinc-950">
+                    <!-- Populated by JS -->
+                    <div class="flex flex-col items-center justify-center h-full text-center text-zinc-500" id="empty-state">
+                        <i class="fa-solid fa-diagram-project text-6xl mb-6 opacity-30"></i>
+                        <p class="text-lg font-medium">No active thread</p>
+                        <p class="text-sm max-w-xs mt-2">Submit a task or click "Run Workflow" to begin orchestration</p>
+                    </div>
+                </div>
+                
+                <!-- INPUT AREA -->
+                <div class="border-t border-zinc-800 bg-zinc-900 p-6">
+                    <div class="bg-zinc-950 border border-zinc-700 rounded-3xl p-2">
+                        <div class="flex items-center gap-x-3 px-4 py-2">
+                            <div class="text-zinc-400">
+                                <i class="fa-solid fa-user"></i>
+                            </div>
+                            <input id="user-input" 
+                                   type="text" 
+                                   placeholder="Describe the NIC driver porting task (e.g. 'Port Intel i225 driver from Linux 6.8 to FreeBSD 14.1')"
+                                   class="flex-1 bg-transparent focus:outline-none text-sm placeholder-zinc-500">
+                        </div>
+                        
+                        <div class="flex items-center justify-between border-t border-zinc-800 pt-3 px-4">
+                            <button onclick="addConfig()" 
+                                    class="flex items-center gap-x-2 text-xs text-zinc-400 hover:text-violet-400 transition-colors">
+                                <i class="fa-solid fa-sliders"></i>
+                                <span>Configure Swarm</span>
+                            </button>
+                            
+                            <button onclick="submitTask()" 
+                                    class="bg-violet-600 hover:bg-violet-500 px-8 py-2.5 rounded-2xl text-sm font-semibold flex items-center gap-x-2 transition-all active:scale-95">
+                                <span>Send to Swarm</span>
+                                <i class="fa-solid fa-paper-plane"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOAST -->
+    <div id="toast" class="hidden fixed bottom-6 right-6 bg-zinc-800 border border-violet-500 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-x-3">
+        <i class="fa-solid fa-check-circle text-emerald-400"></i>
+        <span id="toast-text" class="text-sm"></span>
+    </div>
+
+    <script>
+        // Tailwind script already included via CDN
+        
+        let currentStep = 0;
+        let isRunning = false;
+        let nodes = [];
+        let edges = [];
+        
+        // Define the graph for NIC Driver Porting Swarm
+        function initializeGraph() {
+            nodes = [
+                { id: "start", label: "_start_", x: 180, y: 80, type: "start" },
+                { id: "coordinator", label: "Swarm Coordinator", x: 180, y: 220, type: "agent" },
+                { id: "linux", label: "Linux Driver Team", x: 50, y: 380, type: "team" },
+                { id: "windows", label: "Windows Driver Team", x: 310, y: 380, type: "team" },
+                { id: "freebsd", label: "FreeBSD Driver Team", x: 180, y: 520, type: "team" },
+                { id: "validator", label: "Compatibility Validator", x: 480, y: 280, type: "action" },
+                { id: "end", label: "_end_", x: 480, y: 520, type: "end" }
+            ];
+            
+            edges = [
+                { from: "start", to: "coordinator", label: "" },
+                { from: "coordinator", to: "linux", label: "assign" },
+                { from: "coordinator", to: "windows", label: "assign" },
+                { from: "coordinator", to: "freebsd", label: "assign" },
+                { from: "linux", to: "validator", label: "submit" },
+                { from: "windows", to: "validator", label: "submit" },
+                { from: "freebsd", to: "validator", label: "submit" },
+                { from: "validator", to: "end", label: "complete" },
+                { from: "validator", to: "coordinator", label: "rework" }
+            ];
+        }
+        
+        function drawGraph() {
+            const svg = d3.select("#workflow-svg");
+            svg.selectAll("*").remove();
+            
+            const width = document.getElementById("graph-container").clientWidth;
+            const height = document.getElementById("graph-container").clientHeight;
+            
+            svg.attr("width", width).attr("height", height);
+            
+            // Draw edges first
+            edges.forEach(edge => {
+                const fromNode = nodes.find(n => n.id === edge.from);
+                const toNode = nodes.find(n => n.id === edge.to);
+                
+                if (!fromNode || !toNode) return;
+                
+                const line = svg.append("line")
+                    .attr("x1", fromNode.x)
+                    .attr("y1", fromNode.y)
+                    .attr("x2", toNode.x)
+                    .attr("y2", toNode.y)
+                    .attr("stroke", "#4b5563")
+                    .attr("stroke-width", 3)
+                    .attr("class", "edge")
+                    .attr("stroke-dasharray", "6 8");
+                
+                // Edge label
+                if (edge.label) {
+                    const midX = (fromNode.x + toNode.x) / 2;
+                    const midY = (fromNode.y + toNode.y) / 2 - 12;
+                    
+                    svg.append("text")
+                        .attr("x", midX)
+                        .attr("y", midY)
+                        .attr("text-anchor", "middle")
+                        .attr("fill", "#64748b")
+                        .attr("font-size", "11px")
+                        .text(edge.label);
+                }
+            });
+            
+            // Draw nodes
+            nodes.forEach(node => {
+                const g = svg.append("g")
+                    .attr("transform", `translate(${node.x}, ${node.y})`)
+                    .attr("class", "node cursor-pointer")
+                    .on("click", () => highlightNode(node.id));
+                
+                let color = "#64748b";
+                if (node.type === "agent") color = "#8b5cf6";
+                else if (node.type === "team") color = "#22d3ee";
+                else if (node.type === "action") color = "#eab308";
+                else if (node.type === "start") color = "#a5b4fc";
+                else if (node.type === "end") color = "#f59e0b";
+                
+                // Node circle/rect
+                if (node.type === "agent" || node.type === "team") {
+                    g.append("rect")
+                        .attr("x", -70)
+                        .attr("y", -28)
+                        .attr("width", 140)
+                        .attr("height", 56)
+                        .attr("rx", 12)
+                        .attr("fill", color)
+                        .attr("fill-opacity", 0.15)
+                        .attr("stroke", color)
+                        .attr("stroke-width", 3);
+                } else {
+                    g.append("circle")
+                        .attr("r", 32)
+                        .attr("fill", "#18181b")
+                        .attr("stroke", color)
+                        .attr("stroke-width", 4);
+                }
+                
+                // Label
+                g.append("text")
+                    .attr("text-anchor", "middle")
+                    .attr("dy", node.type === "agent" || node.type === "team" ? "5" : "6")
+                    .attr("fill", "#e2e8f0")
+                    .attr("font-size", node.type === "agent" ? "15px" : "13px")
+                    .attr("font-weight", "600")
+                    .text(node.label);
+            });
+        }
+        
+        function highlightNode(nodeId) {
+            d3.selectAll(".node").classed("active", false);
+            
+            nodes.forEach(n => {
+                if (n.id === nodeId) {
+                    const nodeEl = d3.selectAll(".node").filter(function() {
+                        return d3.select(this).attr("transform").includes(n.x);
+                    });
+                    nodeEl.classed("active", true);
+                }
+            });
+            
+            showToast(`Node selected: ${nodeId}`);
+        }
+        
+        function animateStep(step) {
+            // Reset previous highlights
+            d3.selectAll(".node").classed("active", false);
+            
+            if (step === 0) {
+                highlightNode("start");
+            } else if (step === 1) {
+                highlightNode("coordinator");
+                addTraceMessage("Swarm Coordinator", "Delegating tasks to specialized driver teams...", "agent");
+            } else if (step === 2) {
+                highlightNode("linux");
+                addTraceMessage("Linux Team", "Analyzing source code from kernel 6.12...", "team");
+            } else if (step === 3) {
+                highlightNode("windows");
+                addTraceMessage("Windows Team", "Mapping NDIS APIs to equivalent structures...", "team");
+            } else if (step === 4) {
+                highlightNode("freebsd");
+                addTraceMessage("FreeBSD Team", "Implementing iflib framework compatibility layer...", "team");
+            } else if (step === 5) {
+                highlightNode("validator");
+                addTraceMessage("Compatibility Validator", "Running regression tests across platforms...", "action");
+            } else if (step === 6) {
+                highlightNode("end");
+                addTraceMessage("Orchestrator", "All drivers successfully ported and validated.", "success");
+                document.getElementById("trace-status").innerHTML = `
+                    <span class="px-3 py-0.5 text-xs rounded-full bg-emerald-500/10 text-emerald-400 font-medium">COMPLETED</span>
+                `;
+            }
+        }
+        
+        function addTraceMessage(agent, message, type = "agent") {
+            const tracePanel = document.getElementById("trace-panel");
+            const emptyState = document.getElementById("empty-state");
+            if (emptyState) emptyState.style.display = "none";
+            
+            const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            
+            let icon = "fa-robot";
+            let color = "violet";
+            
+            if (type === "team") {
+                icon = "fa-users";
+                color = "cyan";
+            } else if (type === "action") {
+                icon = "fa-wrench";
+                color = "amber";
+            } else if (type === "success") {
+                icon = "fa-check-circle";
+                color = "emerald";
+            }
+            
+            const html = `
+                <div class="trace-item bg-zinc-900 border border-zinc-700 rounded-2xl p-5">
+                    <div class="flex items-start gap-x-4">
+                        <div class="w-9 h-9 rounded-2xl bg-${color}-500/10 flex items-center justify-center flex-shrink-0">
+                            <i class="fa-solid ${icon} text-${color}-400"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center justify-between">
+                                <div class="font-semibold text-${color}-300">${agent}</div>
+                                <div class="text-zinc-500 text-xs font-mono">${time}</div>
+                            </div>
+                            <p class="mt-2 text-sm leading-relaxed text-zinc-300">${message}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            tracePanel.innerHTML += html;
+            tracePanel.scrollTop = tracePanel.scrollHeight;
+        }
+        
+        function simulateRun() {
+            if (isRunning) return;
+            isRunning = true;
+            
+            document.getElementById("run-btn").innerHTML = `
+                <i class="fa-solid fa-spinner fa-spin"></i>
+                <span>Running...</span>
+            `;
+            document.getElementById("trace-status").innerHTML = `
+                <span class="px-3 py-0.5 text-xs rounded-full bg-blue-500/10 text-blue-400 font-medium">EXECUTING</span>
+            `;
+            
+            document.getElementById("trace-panel").innerHTML = "";
+            
+            let step = 0;
+            const interval = setInterval(() => {
+                animateStep(step);
+                step++;
+                
+                if (step > 6) {
+                    clearInterval(interval);
+                    isRunning = false;
+                    document.getElementById("run-btn").innerHTML = `
+                        <i class="fa-solid fa-play"></i>
+                        <span>Run Again</span>
+                    `;
+                    showToast("Swarm execution completed successfully!", "emerald");
+                }
+            }, 1100);
+        }
+        
+        function submitTask() {
+            const input = document.getElementById("user-input").value.trim();
+            if (!input) return;
+            
+            document.getElementById("trace-panel").innerHTML = "";
+            
+            addTraceMessage("Human", input, "human");
+            
+            setTimeout(() => {
+                addTraceMessage("Swarm Coordinator", "Received task. Initializing multi-team orchestration...", "agent");
+            }, 400);
+            
+            setTimeout(() => {
+                simulateRun();
+            }, 1200);
+            
+            document.getElementById("user-input").value = "";
+        }
+        
+        function newThread() {
+            document.getElementById("trace-panel").innerHTML = `
+                <div class="flex flex-col items-center justify-center h-full text-center text-zinc-500">
+                    <i class="fa-solid fa-diagram-project text-6xl mb-6 opacity-30"></i>
+                    <p class="text-lg font-medium">New thread started</p>
+                    <p class="text-sm">Ready for new porting task</p>
+                </div>
+            `;
+            showToast("New orchestration thread created");
+        }
+        
+        function clearTrace() {
+            document.getElementById("trace-panel").innerHTML = `
+                <div class="flex flex-col items-center justify-center h-full text-center text-zinc-500" id="empty-state">
+                    <i class="fa-solid fa-diagram-project text-6xl mb-6 opacity-30"></i>
+                    <p class="text-lg font-medium">Trace cleared</p>
+                </div>
+            `;
+        }
+        
+        function resetGraph() {
+            currentStep = 0;
+            drawGraph();
+            showToast("Graph reset");
+        }
+        
+        function toggleInterrupts() {
+            showToast("Interrupt mode toggled (demo)");
+        }
+        
+        function addConfig() {
+            showToast("Swarm configuration modal would open here");
+        }
+        
+        function showToast(message, color = "violet") {
+            const toast = document.getElementById("toast");
+            document.getElementById("toast-text").innerHTML = message;
+            toast.classList.remove("hidden");
+            toast.style.borderColor = color === "emerald" ? "#10b981" : "#a5b4fc";
+            
+            setTimeout(() => {
+                toast.classList.add("hidden");
+            }, 2800);
+        }
+        
+        // Initialize everything
+        window.onload = function() {
+            initializeGraph();
+            drawGraph();
+            
+            // Keyboard support
+            document.getElementById("user-input").addEventListener("keypress", function(e) {
+                if (e.key === "Enter") {
+                    submitTask();
+                }
+            });
+            
+            // Responsive resize
+            window.addEventListener("resize", () => {
+                drawGraph();
+            });
+            
+            // Demo auto start hint
+            setTimeout(() => {
+                showToast("Click 'Run Workflow' or submit a task to begin", "amber");
+            }, 1800);
+            
+            console.log("%cNIC Driver Porting Swarm GUI initialized", "color:#a5b4fc; font-size:13px");
+        };
+    </script>
+</body>
+</html>
